@@ -152,12 +152,15 @@
     letter-spacing: 0.04em;
     flex: 1;
   }
+  /* 年份數字改用無襯線字體 */
   .cal-nav h2 em {
-    font-style: italic;
-    font-weight: 600;
+    font-style: normal;
+    font-weight: 700;
+    font-family: "Google Sans Text", Roboto, Helvetica, Arial, sans-serif;
     color: var(--accent);
     margin-right: 8px;
     font-size: 56px;
+    letter-spacing: 0.02em;
   }
   .nav-btn {
     background: var(--surface2);
@@ -289,6 +292,15 @@
     background: color-mix(in srgb, var(--gold) 18%, var(--surface));
     border-left: 3px solid var(--gold);
     color: var(--gold);
+  }
+  /* 自訂活動若已過今天，也顯示完成樣式 */
+  .event-chip.custom.done {
+    background: color-mix(in srgb, var(--green) 12%, var(--surface));
+    border-left: 3px solid var(--green-dim);
+    color: var(--green);
+    text-decoration: line-through;
+    text-decoration-color: var(--green-dim);
+    opacity: 0.65;
   }
 
   /* TOOLTIP */
@@ -625,7 +637,6 @@
       <a class="util-btn" href="https://andrew-fei.github.io/weekly-reading-slides-generator/" target="_blank" rel="noopener">📁 Html簡報模板</a>
       <a class="util-btn" href="https://wabow.slack.com/archives/CF7AYGNKZ/p1762507253437329" target="_blank" rel="noopener">💡 PPT空白範本(Slack)</a>
       <a class="util-btn" href="https://wabow.slack.com/archives/CF7AYGNKZ/p1769582539461669" target="_blank" rel="noopener">📚 最新版哲學手冊(Slack)</a>
-      
     </div>
 
     <div class="panel-title">
@@ -690,8 +701,6 @@ const MEETINGS = [
   { date: '2026-07-21', title: '哇信讀書', type: 'meeting' },
 ];
 
-// Base reports — only the non-deletable "done" ones are truly fixed.
-// "planned" ones are managed via deletedReports + skippedDates in localStorage.
 const BASE_REPORTS = [
   { reporter: 'Carey',  topic: '財富方程式',                    status: 'done',    fixedDate: '2025-11-05' },
   { reporter: 'Joe',    topic: '活學：終生受用的人生高效能解密', status: 'done',    fixedDate: '2025-12-31' },
@@ -716,7 +725,6 @@ const BASE_REPORTS = [
   { reporter: 'Jan',    topic: '(未定)',      status: 'planned' },
 ];
 
-// First Wednesday on/after 2026-03-25 (first planned slot)
 const SCHEDULE_START = '2026-03-25';
 
 const MONTH_NAMES = ['一月','二月','三月','四月','五月','六月','七月','八月','九月','十月','十一月','十二月'];
@@ -735,20 +743,17 @@ function parseDate(s) {
   dt.setHours(0,0,0,0);
   return dt;
 }
-function nextWednesday(fromDate) {
-  const d = new Date(fromDate);
-  // advance day by day until we hit Wednesday (3)
-  d.setDate(d.getDate() + 1);
-  while (d.getDay() !== 3) d.setDate(d.getDate() + 1);
-  return d;
-}
-// Get the Monday of the week for a given date
 function weekKey(dateStr) {
   const d = parseDate(dateStr);
-  const day = d.getDay(); // 0=Sun
+  const day = d.getDay();
   const diff = (day === 0) ? -6 : 1 - day;
   d.setDate(d.getDate() + diff);
   return fmtDate(d);
+}
+
+// ─── 判斷是否已完成：日期 <= 今天 ────────────────────────────────────────────
+function isDatePast(dateStr) {
+  return dateStr <= todayStr;
 }
 
 // ─── PERSISTENCE ──────────────────────────────────────────────────────────────
@@ -758,14 +763,11 @@ function loadCustom() {
 }
 function saveCustom(arr) { localStorage.setItem('bookclub_custom', JSON.stringify(arr)); }
 
-// deletedReports: array of {reporter, topic, originalDate} — planned entries removed
 function loadDeleted() {
   try { return JSON.parse(localStorage.getItem('bookclub_deleted') || '[]'); } catch { return []; }
 }
 function saveDeleted(arr) { localStorage.setItem('bookclub_deleted', JSON.stringify(arr)); }
 
-// skippedDates: Set of date strings that should be skipped when generating schedule
-// (e.g., a week where a custom event was deleted and we don't want to fill it)
 function loadSkipped() {
   try { return new Set(JSON.parse(localStorage.getItem('bookclub_skipped') || '[]')); } catch { return new Set(); }
 }
@@ -773,27 +775,17 @@ function saveSkipped(s) { localStorage.setItem('bookclub_skipped', JSON.stringif
 
 // ─── SCHEDULE ENGINE ──────────────────────────────────────────────────────────
 
-// Returns the meeting week-keys (weeks that contain a 哇信讀書 meeting)
 function getMeetingWeeks() {
   return new Set(MEETINGS.map(m => weekKey(m.date)));
 }
 
-// Compute all scheduled Wednesday slots starting from SCHEDULE_START,
-// skipping weeks that have a 哇信讀書 meeting, user-deleted slots,
-// OR weeks that already have a custom event.
-// Returns array of dateStrings for each planned slot.
 function computeWedSlots(count, skippedDates) {
   const meetingWeeks = getMeetingWeeks();
-
-  // Build set of week-keys occupied by custom events
   const customWeeks = new Set(loadCustom().map(c => weekKey(c.date)));
-
   const slots = [];
   let cursor = parseDate(SCHEDULE_START);
-  // Make sure cursor IS a Wednesday
   while (cursor.getDay() !== 3) cursor.setDate(cursor.getDate() + 1);
-
-  const maxIterations = count * 60; // safety cap
+  const maxIterations = count * 60;
   let iter = 0;
   while (slots.length < count && iter < maxIterations) {
     iter++;
@@ -802,19 +794,16 @@ function computeWedSlots(count, skippedDates) {
     if (!meetingWeeks.has(wk) && !customWeeks.has(wk) && !skippedDates.has(ds)) {
       slots.push(ds);
     }
-    // next Wednesday
     cursor.setDate(cursor.getDate() + 7);
   }
   return slots;
 }
 
-// Build the active REPORTS array with dynamically assigned dates for planned entries
 function buildReports() {
   const deleted = loadDeleted();
-  const deletedKeys = new Set(deleted.map(d => `${d.reporter}||${d.topic}||${d.originalDate}`));
   const skipped = loadSkipped();
 
-  // Fixed done reports (unchanged)
+  // Fixed done reports
   const doneReports = BASE_REPORTS
     .filter(r => r.status === 'done')
     .map(r => ({ date: r.fixedDate, reporter: r.reporter, topic: r.topic, status: 'done' }));
@@ -822,19 +811,16 @@ function buildReports() {
   // Planned reports that haven't been deleted
   const planned = BASE_REPORTS
     .filter(r => r.status === 'planned')
-    .filter(r => {
-      // Check against deleted by reporter+topic combo (before date assignment)
-      return !deleted.some(d => d.reporter === r.reporter && d.topic === r.topic && d.fromBase);
-    });
+    .filter(r => !deleted.some(d => d.reporter === r.reporter && d.topic === r.topic && d.fromBase));
 
   const slots = computeWedSlots(planned.length, skipped);
 
-  const plannedReports = planned.map((r, i) => ({
-    date: slots[i] || '????-??-??',
-    reporter: r.reporter,
-    topic: r.topic,
-    status: 'planned'
-  }));
+  const plannedReports = planned.map((r, i) => {
+    const date = slots[i] || '????-??-??';
+    // ★ 若排程日期 <= 今天，自動視為已完成
+    const status = isDatePast(date) ? 'done' : 'planned';
+    return { date, reporter: r.reporter, topic: r.topic, status };
+  });
 
   return [...doneReports, ...plannedReports];
 }
@@ -854,20 +840,33 @@ function buildEventMap() {
   MEETINGS.forEach(m => add(m.date, { type: 'meeting', label: '哇信讀書', sub: '固定月會', deletable: false }));
   const reports = buildReports();
   reports.forEach(r => add(r.date, {
+    // ★ 根據動態計算後的 status 決定 type
     type: r.status === 'done' ? 'report-done' : 'report',
     label: r.reporter,
     sub: r.topic,
     status: r.status,
+    // ★ 已完成（過去日期）的 planned 報告不可刪除，仍是 base 資料
     deletable: r.status === 'planned',
     reporter: r.reporter,
     topic: r.topic,
     date: r.date,
     fromBase: true
   }));
-  loadCustom().forEach(c => add(c.date, {
-    type: 'custom', label: c.reporter, sub: c.topic,
-    deletable: true, reporter: c.reporter, topic: c.topic, date: c.date, fromBase: false
-  }));
+  loadCustom().forEach(c => {
+    // ★ 自訂活動若日期 <= 今天，也標記為已完成
+    const isDone = isDatePast(c.date);
+    add(c.date, {
+      type: isDone ? 'custom-done' : 'custom',
+      label: c.reporter,
+      sub: c.topic,
+      // ★ 已完成的自訂活動仍可刪除
+      deletable: true,
+      reporter: c.reporter,
+      topic: c.topic,
+      date: c.date,
+      fromBase: false
+    });
+  });
   return map;
 }
 
@@ -914,10 +913,12 @@ function renderCalendar() {
     if (evMap[dateStr]) {
       evMap[dateStr].forEach(ev => {
         const chip = document.createElement('div');
+        // ★ 判斷 CSS class：custom-done 套用 custom + done 兩個 class
         let cls = 'event-chip ';
         if (ev.type === 'meeting') cls += 'meeting';
         else if (ev.type === 'report-done') cls += 'report done';
         else if (ev.type === 'report') cls += 'report';
+        else if (ev.type === 'custom-done') cls += 'custom done';
         else cls += 'custom';
         if (ev.deletable) cls += ' deletable';
         chip.className = cls;
@@ -962,7 +963,6 @@ function openDeleteModal(ev) {
   hideTooltip();
   pendingDelete = ev;
 
-  const isMeetingWeek = getMeetingWeeks().has(weekKey(ev.date));
   const body = document.getElementById('modalBody');
   const note = document.getElementById('modalNote');
 
@@ -997,12 +997,10 @@ document.getElementById('modalConfirm').addEventListener('click', () => {
   closeDeleteModal();
 
   if (ev.fromBase) {
-    // Mark this planned BASE_REPORT as deleted
     const deleted = loadDeleted();
     deleted.push({ reporter: ev.reporter, topic: ev.topic, originalDate: ev.date, fromBase: true });
     saveDeleted(deleted);
   } else {
-    // Remove from custom list
     const custom = loadCustom().filter(c => !(c.date === ev.date && c.reporter === ev.reporter && c.topic === ev.topic));
     saveCustom(custom);
   }
@@ -1019,7 +1017,10 @@ function renderUpcoming(evMap) {
   const all = [];
   MEETINGS.forEach(m => all.push({ date: m.date, type: 'meeting', label: '哇信讀書', sub: '固定月會' }));
   buildReports().forEach(r => all.push({ date: r.date, type: r.status, label: r.reporter, sub: r.topic }));
-  loadCustom().forEach(c => all.push({ date: c.date, type: 'custom', label: c.reporter, sub: c.topic }));
+  loadCustom().forEach(c => {
+    const isDone = isDatePast(c.date);
+    all.push({ date: c.date, type: isDone ? 'done' : 'custom', label: c.reporter, sub: c.topic });
+  });
 
   all.sort((a,b) => a.date.localeCompare(b.date));
   const upcoming = all.filter(e => e.date >= todayStr).slice(0, 8);
