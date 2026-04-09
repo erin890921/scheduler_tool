@@ -836,7 +836,8 @@ function buildReports() {
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
 
-let curYear = 2026, curMonth = 2; // 0-indexed → March
+const _now = new Date();
+let curYear = _now.getFullYear(), curMonth = _now.getMonth();
 
 // ─── EVENT MAP ────────────────────────────────────────────────────────────────
 
