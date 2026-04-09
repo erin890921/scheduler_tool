@@ -1,0 +1,22 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Inject build timestamp
+        run: |
+          TIMESTAMP=$(TZ='Asia/Taipei' date '+%Y-%m-%d %H:%M:%S')
+          sed -i "s/最後更新時間：[0-9 :-]*/最後更新時間：$TIMESTAMP/" index.html
+
+      - name: Deploy
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: .
